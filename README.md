@@ -12,3 +12,19 @@ Example input:
 ```
 candakka -i bl84_all -s 5.7 -c 56
 ```
+
+A docker container is available here:
+```
+docker pull ethill/genome_assembly:candakka
+```
+
+Help message:
+```
+  -h    help (prints this message)
+  -v    version
+  -x    maximum sample coverage; default is 100
+  -n    minimum sample coverage; default is 5
+  -c    number of cores to use; default is 4
+  -i    name of fastq file w/o file ending
+  -s    estimated size of the genome +/- 500kb
+```
