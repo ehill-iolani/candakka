@@ -1,0 +1,108 @@
+#!/bin/bash
+# This workflow assumes that you are using ONLY nanopore reads basecalled using the SUP model
+# Default parameters are defined below
+# Needs Canu, Medaka, Prokka installed. If you want, you can install ropro as well
+
+start=$SECONDS
+
+# Default values
+maxInputCoverage=100
+minInputCoverage=5
+ncores=4
+VERSION=0.0.1
+
+# Defines the help page
+usage() {
+  echo "Usage: $0
+  -h    help (prints this message)
+  -v    version
+  -x    maximum sample coverage; default is 100
+  -n    minimum sample coverage; default is 5
+  -c    number of cores to use; default is 4
+  -i    name of fastq file w/o file ending 
+  -s    estimated size of the genome +/- 500kb
+ "  1>&2
+}
+
+# Returns help screen if no arguments are entered
+[[ $@ ]] || { usage; exit 1; }
+
+# Defines arguments
+while getopts "hvn:x:c:i:s:" options; do
+  
+  
+  case "${options}" in
+    h)
+      usage
+      exit 1
+      ;;
+	v)
+	  echo "Candakka version $VERSION; extremely pre-alpha"
+	  exit 1
+      ;;
+	x)
+      maxInputCoverage=${OPTARG}
+	  ;;
+    n)
+      minInputCoverage=${OPTARG}
+	  ;;
+    c)
+      ncores=${OPTARG}
+	  coreavail=$(lscpu | grep -E '^CPU\(' | sed 's/[^0-9]*//g') 
+	  if [ $ncores -le $coreavail ] ; then 
+	  ncores=$ncores ; else
+	  ncores=4
+	  fi
+	  ;;
+	i)
+	  genome=${OPTARG}
+	  ;;
+	s)
+	  size=${OPTARG}
+	  if [ "$size" == "0" ] ; then 
+	  echo "Error: -${OPTARG} must be greater than 0"
+	  exit 1 ; else
+	  size=$size
+	  fi
+	  ;;
+    esac
+done
+
+
+# Clears previous assembly directory if one exists
+oldass=$(ls | grep ${genome}_assembly)
+if [ "${genome}_assembly" != "$oldass" ] ; then
+mkdir ${genome}_assembly ; else 
+rm -rf ${genome}_assembly
+mkdir ${genome}_assembly
+fi 
+
+var="${genome}.fastq"
+
+# Cats the fastq's; you may need to edit this to reflect where your fastq's live
+cat fastq_sup_demultiplexed/*.fastq >$var
+
+# Moves the fastq into the output directory
+mv $var ${genome}_assembly
+cd ${genome}_assembly
+
+# Runs canu to do read correction and initial assembly
+canu -p canu_${genome}_ont -d canu_${genome}_ont genomeSize=${size}m maxInputCoverage=$maxInputCoverage -nanopore $var mhapPipe=false purgeOverlaps=false saveOverlaps=true minInputCoverage=$minInputCoverage
+echo "Draft assembly constructed using canu"
+
+# Polishes the assembly using medaka
+medaka_consensus -i $var -d canu_${genome}_ont/canu_${genome}_ont.contigs.fasta -o canu_medaka_sup_polish_${genome} -t $ncores -m r941_min_sup_g507
+echo "Assembly polished using medaka"
+
+# Annotates assembly using prokka
+prokka --prefix ${genome}_prokka canu_medaka_sup_polish_${genome}/consensus.fasta
+echo "Contigs annotated using prokka results stored in ${genome}_prokka"
+
+# Summarizes the prokka annotation; must fill out path to blastn on local system
+python /bin/ropro.py -ra -i ${genome}_prokka -o ${genome} -b /root/anaconda3/envs/candakka/bin/blastn
+echo "Prokka annotations summarized using Ropro"
+
+end=$SECONDS
+duration=$(( end - start ))
+echo "Candakka took $duration seconds to complete the job"
+echo "Enjoy the scrumptious results"
